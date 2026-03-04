@@ -14,51 +14,25 @@
         <h1>0xFRAG</h1>
     </nav>
     <div class="container">
-        <!-- Step 1: Connect Wallet -->
-        <div id="step-connect" hidden>
-            <button id="btn-connect">Connect Wallet</button>
+        <!-- Login via browser -->
+        <div id="step-login" hidden>
+            <button id="btn-login">Login via Browser</button>
         </div>
 
-        <!-- Step 2: Login or Register -->
-        <div id="step-auth" hidden>
-            <p class="address" id="display-address"></p>
-            <div class="auth-buttons">
-                <button id="btn-login" hidden>Login</button>
-                <button id="btn-register" hidden>Register (0.10 USDC)</button>
-            </div>
-        </div>
-
-        <!-- Step 3: Authenticated -->
+        <!-- Authenticated -->
         <div id="step-authenticated" hidden>
             <table class="account-info">
                 <tr><td class="label">Account name</td><td id="display-username" class="no-transform"></td></tr>
                 <tr><td class="label">Account ID</td><td id="display-user-id"></td></tr>
                 <tr><td class="label">Wallet address</td><td id="display-user-wallet"></td></tr>
             </table>
-            <div id="username-form">
-                <div class="username-input-wrap">
-                    <input type="text" id="input-username" placeholder="choose a username" maxlength="22" />
-                    <span id="username-indicator"></span>
-                </div>
-                <button id="btn-claim-username" disabled>Claim</button>
-            </div>
             <div class="action-buttons">
                 <button id="btn-logout">Logout</button>
-                <button id="btn-sync">Sync to my avatar</button>
+                <button id="btn-play">Play</button>
             </div>
         </div>
 
         <p id="status" class="status"></p>
-    </div>
-
-    <!-- WalletConnect pairing modal -->
-    <div id="wc-modal" hidden style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1000;display:flex;align-items:center;justify-content:center;">
-        <div style="background:#1a1a1a;padding:2rem;border:1px solid #333;max-width:500px;width:90%;">
-            <p style="color:#fff;font-family:MicroExtend,sans-serif;font-size:0.9rem;margin-bottom:1rem;">WALLETCONNECT PAIRING</p>
-            <p style="color:#aaa;font-size:0.8rem;margin-bottom:1rem;">Copy this URI into your wallet app to connect:</p>
-            <input id="wc-uri" type="text" readonly style="width:100%;padding:10px;background:#111;color:#e0e0e0;border:1px solid #444;font-size:0.75rem;margin-bottom:1rem;" onclick="this.select()">
-            <button id="wc-close" style="width:100%;">Cancel</button>
-        </div>
     </div>
 
     <div id="game-container" hidden></div>
