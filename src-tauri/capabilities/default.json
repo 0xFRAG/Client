@@ -9,6 +9,7 @@
     "core:event:allow-emit",
     "deep-link:default",
     "shell:allow-open",
-    "store:default"
+    "store:default",
+    "single-instance:default"
   ]
 }

@@ -12,6 +12,15 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // On Windows/Linux, deep links arrive as CLI args to a new instance.
+            // The single-instance plugin forwards them here instead.
+            for arg in &argv[1..] {
+                if arg.starts_with("xfrag://") {
+                    let _ = app.emit("deep-link", arg.clone());
+                }
+            }
+        }))
         .manage(state as transport::SharedState)
         .invoke_handler(tauri::generate_handler![
             transport::connect,
@@ -20,7 +29,8 @@ pub fn run() {
             transport::send_chat,
         ])
         .setup(|app| {
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            // Register deep link scheme at runtime (dev mode — no installer)
+            #[cfg(debug_assertions)]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
@@ -38,7 +48,7 @@ pub fn run() {
                 }
             }
 
-            // Listen for deep link URLs received while app is running
+            // Listen for deep link URLs received while app is running (macOS)
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let handle = app.handle().clone();

@@ -37,7 +37,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["0xfrag"]
+        "schemes": ["xfrag"]
       }
     }
   }
