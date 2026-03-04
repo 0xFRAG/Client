@@ -1,12 +1,12 @@
-import { listen } from "@tauri-apps/api/event";
+import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { open } from "@tauri-apps/plugin-shell";
-import { Store } from "@tauri-apps/plugin-store";
+import { LazyStore } from "@tauri-apps/plugin-store";
 
 const API = "https://0xfrag.com";
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 let jwt = null;
-const store = new Store("auth.json");
+const store = new LazyStore("auth.json");
 
 // --- DOM ---
 
@@ -48,14 +48,40 @@ async function api(method, path, body = null, auth = false) {
     return text ? JSON.parse(text) : null;
 }
 
-function generateState() {
-    return crypto.randomUUID();
+// --- Deep link URL parsing ---
+
+function parseDeepLink(urlStr) {
+    // Extract token and state from xfrag://callback?token=...&state=...
+    // Use URL parser, with manual fallback for edge cases
+    try {
+        const url = new URL(urlStr);
+        if (url.protocol === "xfrag:" && url.hostname === "callback") {
+            return {
+                token: url.searchParams.get("token"),
+                state: url.searchParams.get("state"),
+            };
+        }
+    } catch {
+        // Fallback: manual string parsing
+    }
+    // Manual fallback — handles cases where URL() parser fails on custom schemes
+    if (urlStr.startsWith("xfrag://callback")) {
+        const qs = urlStr.split("?")[1];
+        if (qs) {
+            const params = new URLSearchParams(qs);
+            return {
+                token: params.get("token"),
+                state: params.get("state"),
+            };
+        }
+    }
+    return null;
 }
 
 // --- Auth ---
 
 async function loginViaBrowser() {
-    const state = generateState();
+    const state = crypto.randomUUID();
     let unlisten = null;
     let timeout = null;
 
@@ -63,44 +89,40 @@ async function loginViaBrowser() {
         status("Waiting for browser auth...");
 
         const authPromise = new Promise((resolve, reject) => {
-            // Timeout after 5 minutes
             timeout = setTimeout(() => {
                 reject(new Error("Auth timed out (5 min)"));
             }, AUTH_TIMEOUT_MS);
 
-            // Listen for deep link callback
-            listen("deep-link", (event) => {
-                const urlStr = event.payload;
-                let url;
-                try {
-                    url = new URL(urlStr);
-                } catch {
-                    return; // ignore malformed URLs
-                }
+            // onOpenUrl receives urls: string[] from the deep-link plugin
+            onOpenUrl((urls) => {
+                for (const urlStr of urls) {
+                    const parsed = parseDeepLink(urlStr);
+                    if (!parsed) continue;
 
-                if (url.host !== "callback") return;
+                    if (!parsed.token) {
+                        reject(new Error("Callback missing token"));
+                        return;
+                    }
+                    if (parsed.state !== state) {
+                        reject(new Error("State mismatch — possible replay"));
+                        return;
+                    }
 
-                const token = url.searchParams.get("token");
-                const returnedState = url.searchParams.get("state");
-
-                if (!token || returnedState !== state) {
-                    reject(new Error("Invalid callback: state mismatch"));
+                    resolve(parsed.token);
                     return;
                 }
-
-                resolve(token);
             }).then((fn) => { unlisten = fn; });
         });
 
-        // Open browser with state param
         await open(`${API}?state=${encodeURIComponent(state)}`);
 
         const token = await authPromise;
         jwt = token;
         await store.set("jwt", jwt);
+        await store.save();
         await showAuthenticated();
     } catch (e) {
-        status(e.message, true);
+        status(e.message || "Auth failed", true);
     } finally {
         if (timeout) clearTimeout(timeout);
         if (unlisten) unlisten();
@@ -120,7 +142,7 @@ async function showAuthenticated() {
         jwt = null;
         await store.delete("jwt");
         showStep("login");
-        status("Session expired", true);
+        status("Session expired — login again", true);
     }
 }
 
@@ -129,6 +151,27 @@ async function logout() {
     await store.delete("jwt");
     showStep("login");
     status("");
+}
+
+// --- Handle deep links received at cold startup ---
+
+async function handleStartupDeepLink() {
+    try {
+        const urls = await getCurrent();
+        if (!urls) return false;
+        for (const urlStr of urls) {
+            const parsed = parseDeepLink(urlStr);
+            if (parsed && parsed.token) {
+                jwt = parsed.token;
+                await store.set("jwt", jwt);
+                await store.save();
+                return true;
+            }
+        }
+    } catch {
+        // No startup deep link
+    }
+    return false;
 }
 
 // --- Events ---
@@ -161,6 +204,14 @@ document.getElementById("btn-play").addEventListener("click", async () => {
 
 (async () => {
     try {
+        // Check if app was cold-launched via a deep link (e.g. xfrag://callback?token=...)
+        const fromDeepLink = await handleStartupDeepLink();
+        if (fromDeepLink) {
+            await showAuthenticated();
+            return;
+        }
+
+        // Otherwise check stored JWT
         jwt = await store.get("jwt");
         if (jwt) {
             await showAuthenticated();
