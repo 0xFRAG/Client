@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capability set for 0xFRAG desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit"
+  ]
+}
