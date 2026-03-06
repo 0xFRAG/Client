@@ -1,13 +1,28 @@
 mod transport;
 
 use std::sync::Arc;
+use tauri::Emitter;
 use tokio::sync::Mutex;
 use transport::TransportState;
+
+#[tauri::command]
+fn capture_mouse(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.set_cursor_grab(true).map_err(|e| e.to_string())?;
+    window.set_cursor_visible(false).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn release_mouse(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.set_cursor_grab(false).map_err(|e| e.to_string())?;
+    window.set_cursor_visible(true).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 pub fn run() {
     let state = Arc::new(Mutex::new(TransportState::default()));
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(state as transport::SharedState)
@@ -16,7 +31,19 @@ pub fn run() {
             transport::disconnect,
             transport::set_input,
             transport::send_chat,
+            capture_mouse,
+            release_mouse,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .setup(|app| {
+            app.set_device_event_filter(tauri::DeviceEventFilter::Never);
+            Ok(())
+        })
+        .build(tauri::generate_context!())
+        .expect("error building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::MouseMotion { dx, dy, .. } = event {
+            let _ = app_handle.emit("mouse-delta", serde_json::json!({"dx": dx, "dy": dy}));
+        }
+    });
 }

@@ -38,6 +38,18 @@ export function onTransportClosed(cb) {
     return listen("transport-closed", () => cb());
 }
 
+export async function captureMouse() {
+    await invoke("capture_mouse");
+}
+
+export async function releaseMouse() {
+    await invoke("release_mouse");
+}
+
+export function onMouseDelta(cb) {
+    return listen("mouse-delta", (e) => cb(e.payload));
+}
+
 /**
  * Parse a world state payload from the Rust side (already JSON).
  * Provided for API compatibility with the browser client's parseWorldState.

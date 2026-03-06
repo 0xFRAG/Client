@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { createSharedGeometries, updateCharacterAnimation, disposeCharacter } from "./character.js";
 import { MOVE_SPEED, GRAVITY, JUMP_VELOCITY, GROUND_SLIP, AIR_SLIP, TICK_DT, EYE_HEIGHT, JUMP_BUFFER_MS, MOUSE_SENSITIVITY, collides, raycastBlocks, rayHitPlayerAABB } from "./physics.js";
-import { STREAM_HOST, STREAM_PORT, DEFAULT_SERVER, connect, disconnect, setInput, sendChat, onWorldState, onServerEvent, onTransportClosed } from "./network.js";
+import { STREAM_HOST, STREAM_PORT, DEFAULT_SERVER, connect, disconnect, setInput, sendChat, onWorldState, onServerEvent, onTransportClosed, captureMouse, releaseMouse, onMouseDelta } from "./network.js";
 import { buildMap, buildLobbyHud } from "./map.js";
 import { MAGAZINE_SIZE, MAX_RANGE, updateNameSprite, updatePlayers } from "./combat.js";
 import { createChatUI, createHealthBar, createAmmoDisplay, createDeathOverlay, createWeaponWheel, createLoadingOverlay } from "./hud.js";
@@ -192,24 +192,38 @@ export async function startGame(container, token) {
     // --- Init weapon wheel ---
     wheelHud.build(weaponSlot);
 
-    // --- Pointer lock ---
+    // --- Mouse capture (OS-level via tao) ---
 
     let yaw = 0;
     let pitch = 0;
+    let mouseCaptured = false;
+
+    async function doCaptureMouse() {
+        if (mouseCaptured) return;
+        try {
+            await captureMouse();
+            mouseCaptured = true;
+        } catch {}
+    }
+
+    async function doReleaseMouse() {
+        if (!mouseCaptured) return;
+        mouseCaptured = false;
+        try {
+            await releaseMouse();
+        } catch {}
+    }
+
     renderer.domElement.addEventListener("mousedown", (e) => {
         if (chatFocused) return;
         if (e.button === 0) {
-            if (document.pointerLockElement !== renderer.domElement) {
-                const p = renderer.domElement.requestPointerLock({ unadjustedMovement: true });
-                if (p && p.catch) p.catch(() => {
-                    const q = renderer.domElement.requestPointerLock();
-                    if (q && q.catch) q.catch(() => {});
-                });
+            if (!mouseCaptured) {
+                doCaptureMouse();
                 return;
             }
             fire = true;
             pushState();
-        } else if (e.button === 2 && document.pointerLockElement === renderer.domElement) {
+        } else if (e.button === 2 && mouseCaptured) {
             laserActive = true;
         }
     });
@@ -226,11 +240,11 @@ export async function startGame(container, token) {
     let pendingMouseDx = 0;
     let pendingMouseDy = 0;
 
-    const onMouseMove = (e) => {
-        if (document.pointerLockElement !== renderer.domElement) return;
-        pendingMouseDx += e.movementX;
-        pendingMouseDy += e.movementY;
-    };
+    const unlistenMouseDelta = await onMouseDelta(({ dx, dy }) => {
+        if (!mouseCaptured) return;
+        pendingMouseDx += dx;
+        pendingMouseDy += dy;
+    });
 
     // --- Input ---
 
@@ -320,10 +334,14 @@ export async function startGame(container, token) {
             }
             return;
         }
-        if (e.code === "Escape" && chatFocused) {
-            chatHud.input.value = "";
-            chatHud.input.style.display = "none";
-            chatFocused = false;
+        if (e.code === "Escape") {
+            if (chatFocused) {
+                chatHud.input.value = "";
+                chatHud.input.style.display = "none";
+                chatFocused = false;
+            } else {
+                doReleaseMouse();
+            }
             return;
         }
         if (chatFocused) return;
@@ -335,7 +353,7 @@ export async function startGame(container, token) {
     };
 
     const onWheel = (e) => {
-        if (document.pointerLockElement !== renderer.domElement || chatFocused) return;
+        if (!mouseCaptured || chatFocused) return;
         e.preventDefault();
         if (e.deltaY > 0) {
             weaponSlot = weaponSlot === 0 ? 1 : 0;
@@ -347,10 +365,12 @@ export async function startGame(container, token) {
         pushState();
     };
 
-    document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+
+    const onBlur = () => { doReleaseMouse(); };
+    window.addEventListener("blur", onBlur);
 
     // --- Resize ---
 
@@ -826,14 +846,13 @@ export async function startGame(container, token) {
 
     running = false;
     if (serverCleanup) serverCleanup();
-    document.removeEventListener("mousemove", onMouseMove);
+    await doReleaseMouse();
+    unlistenMouseDelta();
     document.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("keyup", onKeyUp);
     renderer.domElement.removeEventListener("wheel", onWheel);
     window.removeEventListener("resize", onResize);
-    if (document.pointerLockElement === renderer.domElement) {
-        document.exitPointerLock();
-    }
+    window.removeEventListener("blur", onBlur);
     container.removeChild(renderer.domElement);
     chatHud.dispose();
     healthHud.dispose();
