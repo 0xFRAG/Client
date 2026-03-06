@@ -203,12 +203,14 @@ export async function startGame(container, token) {
         try {
             await captureMouse();
             mouseCaptured = true;
+            document.body.style.cursor = "none";
         } catch {}
     }
 
     async function doReleaseMouse() {
         if (!mouseCaptured) return;
         mouseCaptured = false;
+        document.body.style.cursor = "";
         try {
             await releaseMouse();
         } catch {}
